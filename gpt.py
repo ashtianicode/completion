@@ -73,6 +73,8 @@ torch.manual_seed(4242)
 batch_size = 4 # how mnay sequences will we process in parallel 
 block_size = 8 # max length of a sequence to fit into context (used for predicting the target)
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 def get_batch(split):
     data = train_data if split == 'train' else val_data
     ix = torch.randint(len(data) - block_size, (batch_size,))
@@ -119,6 +121,7 @@ class BigramLanguageModel(nn.Module):
         self.token_embedding_table = nn.Embedding(vocab_size,vocab_size)
         
     def forward(self,idx,targets=None):
+        idx = idx.long()  # Convert indices to LongTensor
         logits = self.token_embedding_table(idx)
 
         if targets is None:
@@ -128,6 +131,7 @@ class BigramLanguageModel(nn.Module):
             B, T, C = logits.shape
             logits = logits.view(B*T, C)
             targets = targets.view(B*T)
+            targets = targets.long()  # Convert targets to LongTensor
             loss = F.cross_entropy(logits,targets)
             
         return logits, loss
@@ -150,15 +154,15 @@ class BigramLanguageModel(nn.Module):
 
 m = BigramLanguageModel(vocab_size)
 logits, loss = m(xb,yb)
-print(out.shape)
+#print(out.shape)
 print(loss)
 
 
 idx = torch.zeros((1,1),dtype=torch.int16)
 print(decode(m.generate(idx, max_new_tokens=100)[0].tolist()))
 # %%
-# device = torch.device("cpu")
-device = torch.device('mps')
+device = torch.device("cpu")
+#device = torch.device('mps')
 
 
 
@@ -170,7 +174,13 @@ m = model.to(device)
 
 optimizer =  torch.optim.AdamW(m.parameters(), lr=1e-3)
 batch_size = 32
-for steps in range(5000):
+loss_sum = 0.0  # Initialize loss_sum
+
+for steps in range(8000):
+    if steps % 1000 == 999:
+        loss_sum += loss.item()  # Update loss_sum with the current loss
+        print('training...',loss_sum)
+        loss_sum = 0 
 
     xb, yb = get_batch('train')
     logits, loss = m(xb,yb)
