@@ -117,39 +117,49 @@ torch.manual_seed(4242)
 
 class BigramLanguageModel(nn.Module):
     def __init__(self, vocab_size):
-        super().__init__()
-        self.token_embedding_table = nn.Embedding(vocab_size,vocab_size)
         
-    def forward(self,idx,targets=None):
+        super().__init__()
+        d_model = 8
+        self.token_embedding_table = nn.Embedding(vocab_size, d_model)
+        self.conv1d = nn.Conv1d(in_channels=d_model, out_channels=vocab_size, kernel_size=2, stride=1, padding = 1)
+        ## self.conv1d_activation = nn.ReLU()
+
+    def forward(self, idx, targets=None):
         idx = idx.long()  # Convert indices to LongTensor
-        logits = self.token_embedding_table(idx)
+        embeddings = self.token_embedding_table(idx)  # (B, T, C)
+        embeddings = embeddings.permute(0, 2, 1)  # Change to (B, C, T) for Conv1D
+        conv_output = self.conv1d(embeddings)  # (B, C_out, T_out)
+        ## conv_output = self.conv1d_activation(conv_output)
+        logits = conv_output.permute(0, 2, 1)  # Back to (B, T_out, C_out)
+        logits = logits[:,:-1,:]
+        ##print(logits.shape)
+        ##print(B,T,C)
 
         if targets is None:
             loss = None
-        
         else:
             B, T, C = logits.shape
-            logits = logits.view(B*T, C)
-            targets = targets.view(B*T)
+            logits = logits.reshape(B * T, C)
+            targets = targets.view(B * T)
             targets = targets.long()  # Convert targets to LongTensor
-            loss = F.cross_entropy(logits,targets)
+            loss = F.cross_entropy(logits, targets)
             
         return logits, loss
     
     def generate(self, idx, max_new_tokens):
         for _ in range(max_new_tokens):
             # get predictions (logits)
-            logits , loss = self(idx) 
+            logits, loss = self(idx) 
             # focus on last step (what comes next)
-            logits = logits[:,-1,:] #(B,C)
+            logits = logits[:, -1, :]  # (B, C)
             # logits to probs
             probs = F.softmax(logits, dim=-1)
             # sample probs and get 1 
-            idx_next = torch.multinomial(probs, num_samples=1) # (B,1)
-            # appened sampled index to the running sequence
-            idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
+            idx_next = torch.multinomial(probs, num_samples=1)  # (B, 1)
+            # append sampled index to the running sequence
+            idx = torch.cat((idx, idx_next), dim=1)  # (B, T+1)
 
-        return idx 
+        return idx
 
 
 m = BigramLanguageModel(vocab_size)
@@ -172,7 +182,7 @@ t1 = time.time()
 model = BigramLanguageModel(vocab_size)
 m = model.to(device)
 
-optimizer =  torch.optim.AdamW(m.parameters(), lr=1e-3)
+optimizer =  torch.optim.AdamW(m.parameters(), lr=1e-2)
 batch_size = 32
 loss_sum = 0.0  # Initialize loss_sum
 
